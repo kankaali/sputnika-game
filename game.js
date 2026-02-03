@@ -1,13 +1,7 @@
 /***********************
  * MATTER.JS IMPORTS
  ***********************/
-const Engine = Matter.Engine;
-const Render = Matter.Render;
-const Runner = Matter.Runner;
-const World  = Matter.World;
-const Bodies = Matter.Bodies;
-const Body   = Matter.Body;
-const Events = Matter.Events;
+const { Engine, Render, Runner, World, Bodies, Body, Events } = Matter;
 
 /***********************
  * GAME STATE
@@ -23,20 +17,19 @@ let SPAWN_POINT;
 let walls = {};
 
 /***********************
+ * CONSTANTS
+ ***********************/
+const MAX_STRETCH = 160;
+const MAX_SPEED = 10;
+const GRAVITY_Y = 1;
+
+/***********************
  * PLANETS
  ***********************/
 const PLANETS = [
   { level: 1, radius: 14, color: '#94a3b8' },
   { level: 2, radius: 18, color: '#38bdf8' },
-  { level: 3, radius: 22, color: '#22c55e' },
-  { level: 4, radius: 28, color: '#f59e0b' }
 ];
-
-/***********************
- * CONSTANTS
- ***********************/
-const MAX_STRETCH = 150;
-const MAX_SPEED = 9;
 
 /***********************
  * INIT GAME
@@ -51,7 +44,7 @@ function initGame() {
   };
 
   engine = Engine.create();
-  engine.world.gravity.y = 1;
+  engine.world.gravity.y = GRAVITY_Y;
 
   render = Render.create({
     element: document.body,
@@ -70,7 +63,8 @@ function initGame() {
   Render.run(render);
 
   createBounds();
-  bindEvents();
+  registerEngineEvents();
+  bindInputEvents();
   spawnWaitingPlanet();
 }
 
@@ -78,7 +72,7 @@ function initGame() {
  * WORLD BOUNDS
  ***********************/
 function createBounds() {
-  const thickness = 40;
+  const thickness = 50;
 
   walls.ground = Bodies.rectangle(
     WIDTH / 2,
@@ -112,12 +106,19 @@ function createBounds() {
  ***********************/
 function createPlanet(level) {
   const p = PLANETS[level - 1];
-  const body = Bodies.circle(SPAWN_POINT.x, SPAWN_POINT.y, p.radius, {
-    restitution: 0.3,
-    isStatic: true,
-    inertia: Infinity,
-    render: { fillStyle: p.color }
-  });
+
+  const body = Bodies.circle(
+    SPAWN_POINT.x,
+    SPAWN_POINT.y,
+    p.radius,
+    {
+      restitution: 0.35,
+      isStatic: true,
+      inertia: Infinity,
+      render: { fillStyle: p.color }
+    }
+  );
+
   body.level = level;
   World.add(engine.world, body);
   return body;
@@ -130,14 +131,18 @@ function spawnWaitingPlanet() {
 }
 
 /***********************
- * LOCK PLANET
+ * ENGINE EVENTS
  ***********************/
-Events.on(engine, 'beforeUpdate', () => {
-  if (currentPlanet && isAiming) {
-    Body.setVelocity(currentPlanet, { x: 0, y: 0 });
-    Body.setPosition(currentPlanet, SPAWN_POINT);
-  }
-});
+function registerEngineEvents() {
+  Events.on(engine, 'beforeUpdate', () => {
+    if (currentPlanet && isAiming) {
+      Body.setVelocity(currentPlanet, { x: 0, y: 0 });
+      Body.setPosition(currentPlanet, SPAWN_POINT);
+    }
+  });
+
+  Events.on(render, 'afterRender', drawTrajectory);
+}
 
 /***********************
  * INPUT HELPERS
@@ -153,7 +158,7 @@ function getPointerPos(e) {
 /***********************
  * INPUT EVENTS
  ***********************/
-function bindEvents() {
+function bindInputEvents() {
   render.canvas.addEventListener('pointerdown', e => {
     if (!currentPlanet || !canDrop) return;
     isAiming = true;
@@ -171,7 +176,7 @@ function bindEvents() {
     let dx = SPAWN_POINT.x - aimCurrent.x;
     let dy = SPAWN_POINT.y - aimCurrent.y;
 
-    let stretch = Math.min(Math.hypot(dx, dy), MAX_STRETCH);
+    const stretch = Math.min(Math.hypot(dx, dy), MAX_STRETCH);
     const nx = dx / (stretch || 1);
     const ny = dy / (stretch || 1);
     const speed = (stretch / MAX_STRETCH) * MAX_SPEED;
@@ -191,12 +196,10 @@ function bindEvents() {
       spawnWaitingPlanet();
     }, 700);
   });
-
-  Events.on(render, 'afterRender', drawTrajectory);
 }
 
 /***********************
- * TRAJECTORY PREVIEW (BOUNCE)
+ * TRAJECTORY PREVIEW (WITH WALL BOUNCE)
  ***********************/
 function drawTrajectory() {
   if (!isAiming) return;
@@ -205,37 +208,32 @@ function drawTrajectory() {
 
   let dx = SPAWN_POINT.x - aimCurrent.x;
   let dy = SPAWN_POINT.y - aimCurrent.y;
+
   let len = Math.min(Math.hypot(dx, dy), MAX_STRETCH);
+  let vx = (dx / (len || 1)) * ((len / MAX_STRETCH) * MAX_SPEED);
+  let vy = (dy / (len || 1)) * ((len / MAX_STRETCH) * MAX_SPEED);
 
-  const dirX = dx / (len || 1);
-  const dirY = dy / (len || 1);
-  const speed = (len / MAX_STRETCH) * MAX_SPEED;
-  const travel = speed * 40;
+  let x = SPAWN_POINT.x;
+  let y = SPAWN_POINT.y;
 
-  let x1 = SPAWN_POINT.x;
-  let y1 = SPAWN_POINT.y;
-  let x2 = x1 + dirX * travel;
-  let y2 = y1 + dirY * travel;
-
+  ctx.beginPath();
   ctx.setLineDash([6, 6]);
   ctx.strokeStyle = 'rgba(255,255,255,0.85)';
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
+  ctx.moveTo(x, y);
 
-  const margin = 20;
+  const steps = 30;
 
-  if (x2 < margin || x2 > WIDTH - margin) {
-    const wallX = x2 < margin ? margin : WIDTH - margin;
-    const t = (wallX - x1) / (x2 - x1);
-    const hitY = y1 + (y2 - y1) * t;
+  for (let i = 0; i < steps; i++) {
+    x += vx * 3;
+    y += vy * 3;
 
-    const remain = travel * (1 - t);
+    if (x < 20 || x > WIDTH - 20) {
+      vx *= -1; // reflect on wall
+      x = Math.max(20, Math.min(WIDTH - 20, x));
+    }
 
-    ctx.lineTo(wallX, hitY);
-    ctx.lineTo(wallX - dirX * remain, hitY + dirY * remain);
-  } else {
-    ctx.lineTo(x2, y2);
+    ctx.lineTo(x, y);
   }
 
   ctx.stroke();
@@ -243,7 +241,7 @@ function drawTrajectory() {
 }
 
 /***********************
- * HANDLE RESIZE
+ * RESIZE HANDLER
  ***********************/
 window.addEventListener('resize', () => {
   Render.stop(render);
