@@ -45,7 +45,22 @@ Runner.run(runner, engine);
 Render.run(render);
 
 /***********************
- * BOUNDARIES
+ * CANVAS COORDINATE FIX
+ * (CRITICAL for mobile & small screens)
+ ***********************/
+function getCanvasPos(e) {
+  const rect = render.canvas.getBoundingClientRect();
+  const scaleX = render.canvas.width / rect.width;
+  const scaleY = render.canvas.height / rect.height;
+
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+/***********************
+ * BOUNDARIES (BUBBLE)
  ***********************/
 const ground = Bodies.rectangle(200, 590, 400, 20, {
   isStatic: true,
@@ -68,7 +83,7 @@ const PLANETS = [
 ];
 
 /***********************
- * CREATE PLANET
+ * CREATE PLANET (CENTER ONLY)
  ***********************/
 function createPlanet(level) {
   const p = PLANETS[level - 1];
@@ -86,7 +101,7 @@ function createPlanet(level) {
 }
 
 /***********************
- * SPAWN PLANET (CENTER ONLY)
+ * SPAWN WAITING PLANET
  ***********************/
 function spawnWaitingPlanet() {
   if (!canDrop) return;
@@ -106,23 +121,28 @@ Events.on(engine, 'beforeUpdate', () => {
 });
 
 /***********************
- * DRAW TRAJECTORY PREVIEW
+ * DRAW TRAJECTORY
  ***********************/
 Events.on(render, 'afterRender', () => {
   if (!isAiming) return;
 
   const ctx = render.context;
-  const dx = aimStart.x - aimCurrent.x;
-  const dy = aimStart.y - aimCurrent.y;
+
+  let dx = aimStart.x - aimCurrent.x;
+  let dy = aimStart.y - aimCurrent.y;
+
+  const max = 120;
+  dx = Math.max(-max, Math.min(max, dx));
+  dy = Math.max(-max, Math.min(max, dy));
 
   ctx.beginPath();
-  ctx.setLineDash([5, 6]);
+  ctx.setLineDash([6, 6]);
   ctx.moveTo(aimStart.x, aimStart.y);
   ctx.lineTo(
-    aimStart.x + dx * 2,
-    aimStart.y + dy * 2
+    aimStart.x + dx * 1.8,
+    aimStart.y + dy * 1.8
   );
-  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.setLineDash([]);
@@ -135,10 +155,8 @@ render.canvas.addEventListener('pointerdown', (e) => {
   if (!currentPlanet || !canDrop) return;
 
   isAiming = true;
-
-  const rect = render.canvas.getBoundingClientRect();
-  aimCurrent.x = e.clientX - rect.left;
-  aimCurrent.y = e.clientY - rect.top;
+  aimStart = { x: 200, y: 60 };
+  aimCurrent = getCanvasPos(e);
 });
 
 /***********************
@@ -146,10 +164,7 @@ render.canvas.addEventListener('pointerdown', (e) => {
  ***********************/
 render.canvas.addEventListener('pointermove', (e) => {
   if (!isAiming) return;
-
-  const rect = render.canvas.getBoundingClientRect();
-  aimCurrent.x = e.clientX - rect.left;
-  aimCurrent.y = e.clientY - rect.top;
+  aimCurrent = getCanvasPos(e);
 });
 
 /***********************
@@ -158,10 +173,14 @@ render.canvas.addEventListener('pointermove', (e) => {
 render.canvas.addEventListener('pointerup', () => {
   if (!isAiming || !currentPlanet) return;
 
-  const dx = aimStart.x - aimCurrent.x;
-  const dy = aimStart.y - aimCurrent.y;
+  let dx = aimStart.x - aimCurrent.x;
+  let dy = aimStart.y - aimCurrent.y;
 
-  const power = 0.08; // tweak later
+  const max = 120;
+  dx = Math.max(-max, Math.min(max, dx));
+  dy = Math.max(-max, Math.min(max, dy));
+
+  const power = 0.09;
 
   Body.setStatic(currentPlanet, false);
   Body.setVelocity(currentPlanet, {
