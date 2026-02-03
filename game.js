@@ -4,7 +4,7 @@ let engine, render, runner;
 let currentPlanet = null;
 let canDrop = true;
 let isAiming = false;
-let aimCurrent = { x: 0, y: 0 };
+let aim = { x: 0, y: 0 };
 
 let WIDTH, HEIGHT;
 let SPAWN;
@@ -15,8 +15,8 @@ const MAX_SPEED = 10;
 
 /************ PLANETS ************/
 const PLANETS = [
-  { radius: 14, color: '#94a3b8' },
-  { radius: 18, color: '#38bdf8' }
+  { r: 14, c: '#94a3b8' },
+  { r: 18, c: '#38bdf8' }
 ];
 
 /************ INIT ************/
@@ -26,13 +26,12 @@ function init() {
   WIDTH = container.clientWidth;
   HEIGHT = container.clientHeight;
 
-  SPAWN = { x: WIDTH / 2, y: Math.max(70, HEIGHT * 0.12) };
+  SPAWN = { x: WIDTH / 2, y: Math.max(80, HEIGHT * 0.12) };
 
   engine = Engine.create();
   engine.world.gravity.y = 1;
 
   render = Render.create({
-    element: container,
     engine,
     options: {
       width: WIDTH,
@@ -43,12 +42,17 @@ function init() {
     }
   });
 
+  // 🔥 THIS IS THE FIX
+  container.appendChild(render.canvas);
+  render.canvas.width = WIDTH;
+  render.canvas.height = HEIGHT;
+
   runner = Runner.create();
   Runner.run(runner, engine);
   Render.run(render);
 
   createWalls();
-  bindEvents();
+  bindInput();
   spawnPlanet();
 }
 
@@ -68,41 +72,41 @@ function spawnPlanet() {
 
   const p = PLANETS[Math.random() < 0.8 ? 0 : 1];
 
-  currentPlanet = Bodies.circle(SPAWN.x, SPAWN.y, p.radius, {
+  currentPlanet = Bodies.circle(SPAWN.x, SPAWN.y, p.r, {
     isStatic: true,
     inertia: Infinity,
     restitution: 0.35,
-    render: { fillStyle: p.color }
+    render: { fillStyle: p.c }
   });
 
   World.add(engine.world, currentPlanet);
 }
 
 /************ INPUT ************/
-function pointerPos(e) {
+function pos(e) {
   const r = render.canvas.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
-function bindEvents() {
+function bindInput() {
   render.canvas.addEventListener('pointerdown', e => {
     if (!currentPlanet) return;
     isAiming = true;
-    aimCurrent = pointerPos(e);
+    aim = pos(e);
   });
 
   render.canvas.addEventListener('pointermove', e => {
-    if (isAiming) aimCurrent = pointerPos(e);
+    if (isAiming) aim = pos(e);
   });
 
   window.addEventListener('pointerup', () => {
     if (!isAiming || !currentPlanet) return;
 
-    let dx = SPAWN.x - aimCurrent.x;
-    let dy = SPAWN.y - aimCurrent.y;
+    let dx = SPAWN.x - aim.x;
+    let dy = SPAWN.y - aim.y;
 
-    const len = Math.min(Math.hypot(dx, dy), MAX_STRETCH);
-    const speed = (len / MAX_STRETCH) * MAX_SPEED;
+    let len = Math.min(Math.hypot(dx, dy), MAX_STRETCH);
+    let speed = (len / MAX_STRETCH) * MAX_SPEED;
 
     Body.setStatic(currentPlanet, false);
     Body.setVelocity(currentPlanet, {
@@ -128,20 +132,21 @@ function drawTrajectory() {
   if (!isAiming) return;
 
   const ctx = render.context;
-  ctx.beginPath();
   ctx.setLineDash([6, 6]);
   ctx.strokeStyle = 'rgba(255,255,255,0.8)';
   ctx.lineWidth = 2;
+  ctx.beginPath();
   ctx.moveTo(SPAWN.x, SPAWN.y);
 
-  let dx = SPAWN.x - aimCurrent.x;
-  let dy = SPAWN.y - aimCurrent.y;
+  let dx = SPAWN.x - aim.x;
+  let dy = SPAWN.y - aim.y;
   let len = Math.min(Math.hypot(dx, dy), MAX_STRETCH);
 
   let vx = (dx / len) * ((len / MAX_STRETCH) * MAX_SPEED);
   let vy = (dy / len) * ((len / MAX_STRETCH) * MAX_SPEED);
 
-  let x = SPAWN.x, y = SPAWN.y;
+  let x = SPAWN.x;
+  let y = SPAWN.y;
 
   for (let i = 0; i < 25; i++) {
     x += vx * 3;
@@ -157,9 +162,9 @@ function drawTrajectory() {
 /************ RESIZE ************/
 window.addEventListener('resize', () => {
   Render.stop(render);
+  render.canvas.remove();
   World.clear(engine.world);
   Engine.clear(engine);
-  render.canvas.remove();
   init();
 });
 
