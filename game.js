@@ -10,14 +10,21 @@ const Body   = Matter.Body;
 const Events = Matter.Events;
 
 /***********************
+ * CONSTANTS
+ ***********************/
+const WIDTH = 400;
+const HEIGHT = 600;
+const SPAWN_POINT = { x: WIDTH / 2, y: 70 };
+const MAX_STRETCH = 140;
+const MAX_SPEED = 8;
+
+/***********************
  * GAME STATE
  ***********************/
 let currentPlanet = null;
 let canDrop = true;
-
 let isAiming = false;
-const SPAWN_POINT = { x: 200, y: 60 };
-let aimCurrent = { x: 200, y: 60 };
+let aimCurrent = { x: SPAWN_POINT.x, y: SPAWN_POINT.y };
 
 /***********************
  * ENGINE & RENDER
@@ -27,36 +34,29 @@ engine.world.gravity.y = 1;
 
 const render = Render.create({
   element: document.body,
-  engine: engine,
+  engine,
   options: {
-    width: 400,
-    height: 600,
+    width: WIDTH,
+    height: HEIGHT,
     wireframes: false,
     background: '#0b1026'
   }
 });
 
-/***********************
- * PREVENT MOBILE SCROLL / DRAG
- ***********************/
-render.canvas.style.touchAction = 'none';
-
-/***********************
- * RUNNER
- ***********************/
 const runner = Runner.create();
 Runner.run(runner, engine);
 Render.run(render);
 
 /***********************
- * BOUNDARIES
+ * WORLD BOUNDS
  ***********************/
-const ground = Bodies.rectangle(200, 590, 400, 20, {
+const ground = Bodies.rectangle(WIDTH / 2, HEIGHT - 10, WIDTH, 20, {
   isStatic: true,
   render: { fillStyle: '#1e293b' }
 });
-const leftWall  = Bodies.rectangle(0, 300, 20, 600, { isStatic: true });
-const rightWall = Bodies.rectangle(400, 300, 20, 600, { isStatic: true });
+
+const leftWall = Bodies.rectangle(10, HEIGHT / 2, 20, HEIGHT, { isStatic: true });
+const rightWall = Bodies.rectangle(WIDTH - 10, HEIGHT / 2, 20, HEIGHT, { isStatic: true });
 
 World.add(engine.world, [ground, leftWall, rightWall]);
 
@@ -70,46 +70,19 @@ const PLANETS = [
   { level: 4, radius: 28, color: '#f59e0b' }
 ];
 
-/***********************
- * HELPERS
- ***********************/
-function getCanvasPos(e) {
-  const rect = render.canvas.getBoundingClientRect();
-  const scaleX = render.canvas.width / rect.width;
-  const scaleY = render.canvas.height / rect.height;
-
-  return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY
-  };
-}
-
-/***********************
- * CREATE PLANET
- ***********************/
 function createPlanet(level) {
   const p = PLANETS[level - 1];
-
-  const body = Bodies.circle(
-    SPAWN_POINT.x,
-    SPAWN_POINT.y,
-    p.radius,
-    {
-      restitution: 0.3,
-      isStatic: true,
-      inertia: Infinity,
-      render: { fillStyle: p.color }
-    }
-  );
-
+  const body = Bodies.circle(SPAWN_POINT.x, SPAWN_POINT.y, p.radius, {
+    restitution: 0.3,
+    isStatic: true,
+    inertia: Infinity,
+    render: { fillStyle: p.color }
+  });
   body.level = level;
   World.add(engine.world, body);
   return body;
 }
 
-/***********************
- * SPAWN
- ***********************/
 function spawnWaitingPlanet() {
   if (!canDrop) return;
   const level = Math.random() < 0.8 ? 1 : 2;
@@ -117,7 +90,7 @@ function spawnWaitingPlanet() {
 }
 
 /***********************
- * HARD LOCK WAITING PLANET
+ * LOCK PLANET WHILE AIMING
  ***********************/
 Events.on(engine, 'beforeUpdate', () => {
   if (currentPlanet && isAiming) {
@@ -127,35 +100,15 @@ Events.on(engine, 'beforeUpdate', () => {
 });
 
 /***********************
- * DRAW TRAJECTORY (CLAMPED)
+ * UTIL
  ***********************/
-Events.on(render, 'afterRender', () => {
-  if (!isAiming) return;
-
-  const ctx = render.context;
-
-  let dx = SPAWN_POINT.x - aimCurrent.x;
-  let dy = SPAWN_POINT.y - aimCurrent.y;
-
-  const maxLen = 120;
-  const len = Math.hypot(dx, dy);
-  if (len > maxLen) {
-    dx = (dx / len) * maxLen;
-    dy = (dy / len) * maxLen;
-  }
-
-  ctx.beginPath();
-  ctx.setLineDash([6, 6]);
-  ctx.moveTo(SPAWN_POINT.x, SPAWN_POINT.y);
-  ctx.lineTo(
-    SPAWN_POINT.x + dx * 2,
-    SPAWN_POINT.y + dy * 2
-  );
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.setLineDash([]);
-});
+function getCanvasPos(e) {
+  const rect = render.canvas.getBoundingClientRect();
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
+  };
+}
 
 /***********************
  * INPUT
@@ -171,25 +124,23 @@ render.canvas.addEventListener('pointermove', (e) => {
   aimCurrent = getCanvasPos(e);
 });
 
-render.canvas.addEventListener('pointerup', () => {
+window.addEventListener('pointerup', () => {
   if (!isAiming || !currentPlanet) return;
 
   let dx = SPAWN_POINT.x - aimCurrent.x;
   let dy = SPAWN_POINT.y - aimCurrent.y;
 
-  const maxLen = 120;
-  const len = Math.hypot(dx, dy);
-  if (len > maxLen) {
-    dx = (dx / len) * maxLen;
-    dy = (dy / len) * maxLen;
-  }
+  let stretch = Math.hypot(dx, dy);
+  stretch = Math.min(stretch, MAX_STRETCH);
 
-  const power = 0.09;
+  const nx = dx / (stretch || 1);
+  const ny = dy / (stretch || 1);
+  const speed = (stretch / MAX_STRETCH) * MAX_SPEED;
 
   Body.setStatic(currentPlanet, false);
   Body.setVelocity(currentPlanet, {
-    x: dx * power,
-    y: dy * power
+    x: nx * speed,
+    y: ny * speed
   });
 
   currentPlanet = null;
@@ -199,10 +150,59 @@ render.canvas.addEventListener('pointerup', () => {
   setTimeout(() => {
     canDrop = true;
     spawnWaitingPlanet();
-  }, 800);
+  }, 700);
 });
 
 /***********************
- * START
+ * TRAJECTORY PREVIEW (WITH WALL BOUNCE)
+ ***********************/
+Events.on(render, 'afterRender', () => {
+  if (!isAiming) return;
+
+  const ctx = render.context;
+
+  let dx = SPAWN_POINT.x - aimCurrent.x;
+  let dy = SPAWN_POINT.y - aimCurrent.y;
+
+  let len = Math.hypot(dx, dy);
+  len = Math.min(len, MAX_STRETCH);
+
+  const dirX = dx / (len || 1);
+  const dirY = dy / (len || 1);
+
+  const speed = (len / MAX_STRETCH) * MAX_SPEED;
+  const travel = speed * 35;
+
+  let x1 = SPAWN_POINT.x;
+  let y1 = SPAWN_POINT.y;
+  let x2 = x1 + dirX * travel;
+  let y2 = y1 + dirY * travel;
+
+  ctx.setLineDash([6, 6]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+
+  if (x2 < 20 || x2 > WIDTH - 20) {
+    const wallX = x2 < 20 ? 20 : WIDTH - 20;
+    const t = (wallX - x1) / (x2 - x1);
+    const hitY = y1 + (y2 - y1) * t;
+
+    const reflectX = -dirX;
+    const remain = travel * (1 - t);
+
+    ctx.lineTo(wallX, hitY);
+    ctx.lineTo(wallX + reflectX * remain, hitY + dirY * remain);
+  } else {
+    ctx.lineTo(x2, y2);
+  }
+
+  ctx.stroke();
+  ctx.setLineDash([]);
+});
+
+/***********************
+ * START GAME
  ***********************/
 spawnWaitingPlanet();
