@@ -12,6 +12,8 @@ let SPAWN;
 /************ CONSTANTS ************/
 const MAX_STRETCH = 160;
 const MAX_SPEED = 10;
+const BASE_WIDTH = 420;
+let SCALE = 1;
 
 /************ PLANETS ************/
 const PLANETS = [
@@ -26,7 +28,13 @@ function init() {
   WIDTH = container.clientWidth;
   HEIGHT = container.clientHeight;
 
-  SPAWN = { x: WIDTH / 2, y: Math.max(80, HEIGHT * 0.12) };
+  SCALE = WIDTH / BASE_WIDTH;
+  SCALE = Math.max(0.9, Math.min(SCALE, 1.4));
+
+  SPAWN = {
+    x: WIDTH / 2,
+    y: Math.max(80, HEIGHT * 0.12)
+  };
 
   engine = Engine.create();
   engine.world.gravity.y = 1;
@@ -38,12 +46,13 @@ function init() {
       height: HEIGHT,
       wireframes: false,
       background: '#0b1026',
-      pixelRatio: window.devicePixelRatio
+      pixelRatio: Math.min(window.devicePixelRatio, 1.5) // 🔥 PERFORMANCE FIX
     }
   });
 
-  // 🔥 THIS IS THE FIX
+  container.innerHTML = '';
   container.appendChild(render.canvas);
+
   render.canvas.width = WIDTH;
   render.canvas.height = HEIGHT;
 
@@ -70,13 +79,14 @@ function createWalls() {
 function spawnPlanet() {
   if (!canDrop) return;
 
-  const p = PLANETS[Math.random() < 0.8 ? 0 : 1];
+  const base = PLANETS[Math.random() < 0.8 ? 0 : 1];
+  const radius = base.r * SCALE;
 
-  currentPlanet = Bodies.circle(SPAWN.x, SPAWN.y, p.r, {
+  currentPlanet = Bodies.circle(SPAWN.x, SPAWN.y, radius, {
     isStatic: true,
     inertia: Infinity,
     restitution: 0.35,
-    render: { fillStyle: p.c }
+    render: { fillStyle: base.c }
   });
 
   World.add(engine.world, currentPlanet);
@@ -133,7 +143,7 @@ function drawTrajectory() {
 
   const ctx = render.context;
   ctx.setLineDash([6, 6]);
-  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(SPAWN.x, SPAWN.y);
@@ -148,7 +158,7 @@ function drawTrajectory() {
   let x = SPAWN.x;
   let y = SPAWN.y;
 
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < 28; i++) {
     x += vx * 3;
     y += vy * 3;
     if (x < 20 || x > WIDTH - 20) vx *= -1;
@@ -168,4 +178,5 @@ window.addEventListener('resize', () => {
   init();
 });
 
+/************ START ************/
 init();
