@@ -15,9 +15,8 @@ const Events = Matter.Events;
 let currentPlanet = null;
 let canDrop = true;
 
-// AIMING STATE
 let isAiming = false;
-let aimStart = { x: 200, y: 60 };
+const SPAWN_POINT = { x: 200, y: 60 };
 let aimCurrent = { x: 200, y: 60 };
 
 /***********************
@@ -38,6 +37,11 @@ const render = Render.create({
 });
 
 /***********************
+ * PREVENT MOBILE SCROLL / DRAG
+ ***********************/
+render.canvas.style.touchAction = 'none';
+
+/***********************
  * RUNNER
  ***********************/
 const runner = Runner.create();
@@ -45,28 +49,12 @@ Runner.run(runner, engine);
 Render.run(render);
 
 /***********************
- * CANVAS COORDINATE FIX
- * (CRITICAL for mobile & small screens)
- ***********************/
-function getCanvasPos(e) {
-  const rect = render.canvas.getBoundingClientRect();
-  const scaleX = render.canvas.width / rect.width;
-  const scaleY = render.canvas.height / rect.height;
-
-  return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY
-  };
-}
-
-/***********************
- * BOUNDARIES (BUBBLE)
+ * BOUNDARIES
  ***********************/
 const ground = Bodies.rectangle(200, 590, 400, 20, {
   isStatic: true,
   render: { fillStyle: '#1e293b' }
 });
-
 const leftWall  = Bodies.rectangle(0, 300, 20, 600, { isStatic: true });
 const rightWall = Bodies.rectangle(400, 300, 20, 600, { isStatic: true });
 
@@ -83,17 +71,36 @@ const PLANETS = [
 ];
 
 /***********************
- * CREATE PLANET (CENTER ONLY)
+ * HELPERS
+ ***********************/
+function getCanvasPos(e) {
+  const rect = render.canvas.getBoundingClientRect();
+  const scaleX = render.canvas.width / rect.width;
+  const scaleY = render.canvas.height / rect.height;
+
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+/***********************
+ * CREATE PLANET
  ***********************/
 function createPlanet(level) {
   const p = PLANETS[level - 1];
 
-  const body = Bodies.circle(200, 60, p.radius, {
-    restitution: 0.3,
-    isStatic: true,
-    inertia: Infinity,
-    render: { fillStyle: p.color }
-  });
+  const body = Bodies.circle(
+    SPAWN_POINT.x,
+    SPAWN_POINT.y,
+    p.radius,
+    {
+      restitution: 0.3,
+      isStatic: true,
+      inertia: Infinity,
+      render: { fillStyle: p.color }
+    }
+  );
 
   body.level = level;
   World.add(engine.world, body);
@@ -101,46 +108,48 @@ function createPlanet(level) {
 }
 
 /***********************
- * SPAWN WAITING PLANET
+ * SPAWN
  ***********************/
 function spawnWaitingPlanet() {
   if (!canDrop) return;
-
   const level = Math.random() < 0.8 ? 1 : 2;
   currentPlanet = createPlanet(level);
 }
 
 /***********************
- * LOCK WAITING PLANET
+ * HARD LOCK WAITING PLANET
  ***********************/
 Events.on(engine, 'beforeUpdate', () => {
   if (currentPlanet && isAiming) {
     Body.setVelocity(currentPlanet, { x: 0, y: 0 });
-    Body.setPosition(currentPlanet, aimStart);
+    Body.setPosition(currentPlanet, SPAWN_POINT);
   }
 });
 
 /***********************
- * DRAW TRAJECTORY
+ * DRAW TRAJECTORY (CLAMPED)
  ***********************/
 Events.on(render, 'afterRender', () => {
   if (!isAiming) return;
 
   const ctx = render.context;
 
-  let dx = aimStart.x - aimCurrent.x;
-  let dy = aimStart.y - aimCurrent.y;
+  let dx = SPAWN_POINT.x - aimCurrent.x;
+  let dy = SPAWN_POINT.y - aimCurrent.y;
 
-  const max = 120;
-  dx = Math.max(-max, Math.min(max, dx));
-  dy = Math.max(-max, Math.min(max, dy));
+  const maxLen = 120;
+  const len = Math.hypot(dx, dy);
+  if (len > maxLen) {
+    dx = (dx / len) * maxLen;
+    dy = (dy / len) * maxLen;
+  }
 
   ctx.beginPath();
   ctx.setLineDash([6, 6]);
-  ctx.moveTo(aimStart.x, aimStart.y);
+  ctx.moveTo(SPAWN_POINT.x, SPAWN_POINT.y);
   ctx.lineTo(
-    aimStart.x + dx * 1.8,
-    aimStart.y + dy * 1.8
+    SPAWN_POINT.x + dx * 2,
+    SPAWN_POINT.y + dy * 2
   );
   ctx.strokeStyle = 'rgba(255,255,255,0.85)';
   ctx.lineWidth = 2;
@@ -149,36 +158,31 @@ Events.on(render, 'afterRender', () => {
 });
 
 /***********************
- * INPUT: START AIM
+ * INPUT
  ***********************/
 render.canvas.addEventListener('pointerdown', (e) => {
   if (!currentPlanet || !canDrop) return;
-
   isAiming = true;
-  aimStart = { x: 200, y: 60 };
   aimCurrent = getCanvasPos(e);
 });
 
-/***********************
- * INPUT: AIM DRAG
- ***********************/
 render.canvas.addEventListener('pointermove', (e) => {
   if (!isAiming) return;
   aimCurrent = getCanvasPos(e);
 });
 
-/***********************
- * INPUT: RELEASE → SHOOT
- ***********************/
 render.canvas.addEventListener('pointerup', () => {
   if (!isAiming || !currentPlanet) return;
 
-  let dx = aimStart.x - aimCurrent.x;
-  let dy = aimStart.y - aimCurrent.y;
+  let dx = SPAWN_POINT.x - aimCurrent.x;
+  let dy = SPAWN_POINT.y - aimCurrent.y;
 
-  const max = 120;
-  dx = Math.max(-max, Math.min(max, dx));
-  dy = Math.max(-max, Math.min(max, dy));
+  const maxLen = 120;
+  const len = Math.hypot(dx, dy);
+  if (len > maxLen) {
+    dx = (dx / len) * maxLen;
+    dy = (dy / len) * maxLen;
+  }
 
   const power = 0.09;
 
@@ -199,6 +203,6 @@ render.canvas.addEventListener('pointerup', () => {
 });
 
 /***********************
- * INITIAL SPAWN
+ * START
  ***********************/
 spawnWaitingPlanet();
