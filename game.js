@@ -7,6 +7,7 @@ const Runner = Matter.Runner;
 const World  = Matter.World;
 const Bodies = Matter.Bodies;
 const Body   = Matter.Body;
+const Events = Matter.Events;
 
 /***********************
  * GAME STATE
@@ -32,7 +33,7 @@ const render = Render.create({
 });
 
 /***********************
- * RUNNER (IMPORTANT!)
+ * RUNNER
  ***********************/
 const runner = Runner.create();
 Runner.run(runner, engine);
@@ -70,7 +71,7 @@ function createPlanet(x, y, level, isWaiting) {
   const body = Bodies.circle(x, y, p.radius, {
     restitution: 0.3,
     isStatic: isWaiting,
-    inertia: isWaiting ? Infinity : undefined, // ⬅️ stops wobble
+    inertia: isWaiting ? Infinity : undefined,
     render: { fillStyle: p.color }
   });
 
@@ -90,7 +91,21 @@ function spawnWaitingPlanet() {
 }
 
 /***********************
- * PLAYER INPUT
+ * LOCK WAITING PLANET
+ * (prevents vertical movement & weird spawn illusion)
+ ***********************/
+Events.on(engine, 'beforeUpdate', () => {
+  if (currentPlanet) {
+    Body.setVelocity(currentPlanet, { x: 0, y: 0 });
+    Body.setPosition(currentPlanet, {
+      x: currentPlanet.position.x,
+      y: 60
+    });
+  }
+});
+
+/***********************
+ * PLAYER INPUT (DROP)
  ***********************/
 render.canvas.addEventListener('pointerdown', (e) => {
   if (!currentPlanet || !canDrop) return;
@@ -108,7 +123,7 @@ render.canvas.addEventListener('pointerdown', (e) => {
   setTimeout(() => {
     canDrop = true;
     spawnWaitingPlanet();
-  }, 400);
+  }, 700); // slight delay = better feel
 });
 
 /***********************
