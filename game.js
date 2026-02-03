@@ -15,6 +15,11 @@ const Events = Matter.Events;
 let currentPlanet = null;
 let canDrop = true;
 
+// AIMING STATE
+let isAiming = false;
+let aimStart = { x: 200, y: 60 };
+let aimCurrent = { x: 200, y: 60 };
+
 /***********************
  * ENGINE & RENDER
  ***********************/
@@ -40,20 +45,20 @@ Runner.run(runner, engine);
 Render.run(render);
 
 /***********************
- * BOUNDARIES (BUBBLE)
+ * BOUNDARIES
  ***********************/
 const ground = Bodies.rectangle(200, 590, 400, 20, {
   isStatic: true,
   render: { fillStyle: '#1e293b' }
 });
 
-const leftWall  = Bodies.rectangle(0,   300, 20, 600, { isStatic: true });
+const leftWall  = Bodies.rectangle(0, 300, 20, 600, { isStatic: true });
 const rightWall = Bodies.rectangle(400, 300, 20, 600, { isStatic: true });
 
 World.add(engine.world, [ground, leftWall, rightWall]);
 
 /***********************
- * PLANET DEFINITIONS
+ * PLANETS
  ***********************/
 const PLANETS = [
   { level: 1, radius: 14, color: '#94a3b8' },
@@ -65,13 +70,13 @@ const PLANETS = [
 /***********************
  * CREATE PLANET
  ***********************/
-function createPlanet(x, y, level, isWaiting) {
+function createPlanet(level) {
   const p = PLANETS[level - 1];
 
-  const body = Bodies.circle(x, y, p.radius, {
+  const body = Bodies.circle(200, 60, p.radius, {
     restitution: 0.3,
-    isStatic: isWaiting,
-    inertia: isWaiting ? Infinity : undefined,
+    isStatic: true,
+    inertia: Infinity,
     render: { fillStyle: p.color }
   });
 
@@ -81,49 +86,97 @@ function createPlanet(x, y, level, isWaiting) {
 }
 
 /***********************
- * SPAWN WAITING PLANET
+ * SPAWN PLANET (CENTER ONLY)
  ***********************/
 function spawnWaitingPlanet() {
   if (!canDrop) return;
 
   const level = Math.random() < 0.8 ? 1 : 2;
-  currentPlanet = createPlanet(200, 60, level, true);
+  currentPlanet = createPlanet(level);
 }
 
 /***********************
  * LOCK WAITING PLANET
- * (prevents vertical movement & weird spawn illusion)
  ***********************/
 Events.on(engine, 'beforeUpdate', () => {
-  if (currentPlanet) {
+  if (currentPlanet && isAiming) {
     Body.setVelocity(currentPlanet, { x: 0, y: 0 });
-    Body.setPosition(currentPlanet, {
-      x: currentPlanet.position.x,
-      y: 60
-    });
+    Body.setPosition(currentPlanet, aimStart);
   }
 });
 
 /***********************
- * PLAYER INPUT (DROP)
+ * DRAW TRAJECTORY PREVIEW
+ ***********************/
+Events.on(render, 'afterRender', () => {
+  if (!isAiming) return;
+
+  const ctx = render.context;
+  const dx = aimStart.x - aimCurrent.x;
+  const dy = aimStart.y - aimCurrent.y;
+
+  ctx.beginPath();
+  ctx.setLineDash([5, 6]);
+  ctx.moveTo(aimStart.x, aimStart.y);
+  ctx.lineTo(
+    aimStart.x + dx * 2,
+    aimStart.y + dy * 2
+  );
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.setLineDash([]);
+});
+
+/***********************
+ * INPUT: START AIM
  ***********************/
 render.canvas.addEventListener('pointerdown', (e) => {
   if (!currentPlanet || !canDrop) return;
 
-  const rect = render.canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const clampedX = Math.max(30, Math.min(370, x));
+  isAiming = true;
 
-  Body.setPosition(currentPlanet, { x: clampedX, y: 60 });
+  const rect = render.canvas.getBoundingClientRect();
+  aimCurrent.x = e.clientX - rect.left;
+  aimCurrent.y = e.clientY - rect.top;
+});
+
+/***********************
+ * INPUT: AIM DRAG
+ ***********************/
+render.canvas.addEventListener('pointermove', (e) => {
+  if (!isAiming) return;
+
+  const rect = render.canvas.getBoundingClientRect();
+  aimCurrent.x = e.clientX - rect.left;
+  aimCurrent.y = e.clientY - rect.top;
+});
+
+/***********************
+ * INPUT: RELEASE → SHOOT
+ ***********************/
+render.canvas.addEventListener('pointerup', () => {
+  if (!isAiming || !currentPlanet) return;
+
+  const dx = aimStart.x - aimCurrent.x;
+  const dy = aimStart.y - aimCurrent.y;
+
+  const power = 0.08; // tweak later
+
   Body.setStatic(currentPlanet, false);
+  Body.setVelocity(currentPlanet, {
+    x: dx * power,
+    y: dy * power
+  });
 
   currentPlanet = null;
+  isAiming = false;
   canDrop = false;
 
   setTimeout(() => {
     canDrop = true;
     spawnWaitingPlanet();
-  }, 700); // slight delay = better feel
+  }, 800);
 });
 
 /***********************
